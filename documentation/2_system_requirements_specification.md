@@ -225,6 +225,3 @@ sequenceDiagram
     end
     Note over C,WS: WS inactivity timeout 30s
 ```
-
-![SRS Sequence Diagram](./images/srs_sequence_diagram.png)
-

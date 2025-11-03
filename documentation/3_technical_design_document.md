@@ -61,8 +61,6 @@ flowchart LR
   TS --> LOG
 ```
 
-![Component Diagram](./images/tdd_component_diagram.png)
-
 ### 2.4 Sequence (MVP)
 
 ```mermaid
@@ -82,8 +80,6 @@ sequenceDiagram
   WS-->>C: Binary frame (audio/mpeg)
   Note over C,WS: WS inactivity timeout = 30s
 ```
-
-![TDD Sequence Diagram](./images/tdd_sequence_diagram.png)
 
 ---
 
