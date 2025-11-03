@@ -8,6 +8,7 @@ from contextlib import suppress
 from typing import Annotated
 
 from fastapi import Depends, WebSocket, WebSocketDisconnect, status
+from starlette.websockets import WebSocketState
 
 from app.config import Settings, get_settings
 from app.dependencies import get_chat_service, get_tts_service
@@ -28,6 +29,7 @@ async def websocket_endpoint(
     """Main WebSocket workflow: text → chat → TTS → audio bytes."""
 
     await websocket.accept()
+    should_close = True
     logger.info(
         "WebSocket connection accepted",
         extra={"client": _client_repr(websocket)},
@@ -46,12 +48,14 @@ async def websocket_endpoint(
                     extra={"client": _client_repr(websocket)},
                 )
                 await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
+                should_close = False
                 break
             except WebSocketDisconnect:
                 logger.info(
                     "WebSocket client disconnected",
                     extra={"client": _client_repr(websocket)},
                 )
+                should_close = False
                 break
 
             try:
@@ -114,8 +118,9 @@ async def websocket_endpoint(
                 },
             )
     finally:
-        with suppress(RuntimeError):
-            await websocket.close()
+        if should_close and websocket.application_state == WebSocketState.CONNECTED:
+            with suppress(RuntimeError, WebSocketDisconnect):
+                await websocket.close()
         logger.info(
             "WebSocket connection closed",
             extra={"client": _client_repr(websocket)},

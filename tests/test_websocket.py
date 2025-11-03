@@ -1,9 +1,13 @@
 import json
 
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect, WebSocketState
 
+from app.config import Settings
 from app.dependencies import get_chat_service, get_tts_service
 from app.models import ErrorResponse
+from app.websocket_handlers import websocket_endpoint
 
 
 class DummyChatService:
@@ -54,3 +58,60 @@ def test_websocket_text_length_enforced(app) -> None:
 
     data = json.loads(response)
     assert data["error"] == "validation_error"
+
+
+class _ClientAddress:
+    def __init__(self, host: str = "127.0.0.1", port: int = 12345) -> None:
+        self.host = host
+        self.port = port
+
+
+class DummyWebSocket:
+    """Minimal WebSocket stub to reproduce disconnect behaviour."""
+
+    def __init__(self, messages: list[str]) -> None:
+        self._messages = messages
+        self.accepted = False
+        self.sent_bytes: list[bytes] = []
+        self.sent_text: list[str] = []
+        self.close_called = False
+        self.client = _ClientAddress()
+        self.application_state = WebSocketState.CONNECTED
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def receive_text(self) -> str:
+        if not self._messages:
+            raise WebSocketDisconnect()
+        item = self._messages.pop(0)
+        if item == "__disconnect__":
+            raise WebSocketDisconnect()
+        return item
+
+    async def send_text(self, data: str) -> None:
+        self.sent_text.append(data)
+
+    async def send_bytes(self, data: bytes) -> None:
+        self.sent_bytes.append(data)
+
+    async def close(self, code: int = 1000) -> None:
+        self.close_called = True
+        raise AssertionError("close should not be invoked when client already disconnected")
+
+
+@pytest.mark.asyncio
+async def test_websocket_skips_close_after_client_disconnect(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    settings = Settings()
+    chat_service = DummyChatService()
+    tts_service = DummyTtsService()
+    payload = json.dumps({"text": "hello"})
+    websocket = DummyWebSocket([payload, "__disconnect__"])
+
+    await websocket_endpoint(websocket, chat_service, tts_service, settings)
+
+    assert websocket.accepted
+    assert websocket.sent_bytes == [b"LLM reply to: hello"]
+    assert websocket.sent_text == []
+    assert websocket.close_called is False
